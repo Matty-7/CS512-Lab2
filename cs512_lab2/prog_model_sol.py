@@ -9,10 +9,33 @@ from cs512_lab2.prog_model import PandasMapReduce
 """ Word count """
 
 
-def word_count_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]: ...
+def word_count_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]:
+    """
+    Maps each document to a list of (word, 1) pairs.
+    
+    Args:
+        key: Document ID
+        value: Document text
+    
+    Returns:
+        List of (word, 1) tuples
+    """
+    words = value.split()
+    return [(word, 1) for word in words]
 
 
-def word_count_reducer(key: Any, values: list[Any]) -> list[Any]: ...
+def word_count_reducer(key: Any, values: list[Any]) -> list[Any]:
+    """
+    Reduces all counts for a word to a single sum.
+    
+    Args:
+        key: Word
+        values: List of counts (all 1s from mapper)
+    
+    Returns:
+        List containing the total count
+    """
+    return [sum(values)]
 
 
 def word_count_test():
@@ -87,10 +110,33 @@ def word_count_test():
 """ Inverted index """
 
 
-def inverted_index_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]: ...
+def inverted_index_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]:
+    """
+    Maps each document to a list of (word, document_id) pairs.
+    
+    Args:
+        key: Document ID
+        value: Document text
+    
+    Returns:
+        List of (word, document_id) tuples
+    """
+    words = value.split()
+    return [(word, key) for word in words]
 
 
-def inverted_index_reducer(key: Any, values: list[Any]) -> list[Any]: ...
+def inverted_index_reducer(key: Any, values: list[Any]) -> list[Any]:
+    """
+    Reduces all document IDs for a word into a single list.
+    
+    Args:
+        key: Word
+        values: List of document IDs where the word appears
+    
+    Returns:
+        List containing a single list of document IDs
+    """
+    return [values]
 
 
 def inverted_index_test():
@@ -157,10 +203,48 @@ def inverted_index_test():
 n_gram_n = 3  # n-gram length
 
 
-def ngram_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]: ...
+def ngram_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]:
+    """
+    Maps each document to a list of (prefix, next_char) pairs.
+    
+    For each n-gram in the text, emit the first (n-1) characters as key
+    and the last character as value.
+    
+    Args:
+        key: Document ID
+        value: Document text
+    
+    Returns:
+        List of (prefix, next_char) tuples
+    """
+    result = []
+    for i in range(len(value) - n_gram_n + 1):
+        n_gram = value[i : i + n_gram_n]
+        prefix = n_gram[:-1]  # First n-1 characters
+        next_char = n_gram[-1]  # Last character
+        result.append((prefix, next_char))
+    return result
 
 
-def ngram_reducer(key: Any, values: list[Any]) -> list[Any]: ...
+def ngram_reducer(key: Any, values: list[Any]) -> list[Any]:
+    """
+    Reduces character occurrences for a prefix into a probability distribution.
+    
+    Args:
+        key: Prefix (first n-1 characters)
+        values: List of next characters that follow this prefix
+    
+    Returns:
+        List containing a single dictionary mapping characters to probabilities
+    """
+    # Count occurrences of each character
+    char_counts = Counter(values)
+    total_count = sum(char_counts.values())
+    
+    # Convert counts to probabilities
+    probabilities = {char: count / total_count for char, count in char_counts.items()}
+    
+    return [probabilities]
 
 
 def ngram_test():
@@ -266,10 +350,51 @@ table1_name = "left"  # The name of the left table
 table2_name = "right"  # The name of the right table
 
 
-def inner_join_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]: ...
+def inner_join_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]:
+    """
+    Maps each table row to (join_key, (table_name, row_data)) pairs.
+    
+    Args:
+        key: Table name ("left" or "right")
+        value: Dictionary containing the row data
+    
+    Returns:
+        List containing one tuple: (join_column_value, (table_name, row_data))
+    """
+    join_key = value[join_column]
+    return [(join_key, (key, value))]
 
 
-def inner_join_reducer(key: Any, values: list[Any]) -> list[Any]: ...
+def inner_join_reducer(key: Any, values: list[Any]) -> list[Any]:
+    """
+    Reduces rows with the same join key by combining left and right table rows.
+    
+    Args:
+        key: Join column value
+        values: List of (table_name, row_data) tuples
+    
+    Returns:
+        List of joined row dictionaries
+    """
+    # Separate rows by table
+    left_rows = []
+    right_rows = []
+    
+    for table_name, row_data in values:
+        if table_name == table1_name:
+            left_rows.append(row_data)
+        elif table_name == table2_name:
+            right_rows.append(row_data)
+    
+    # Perform Cartesian product of left and right rows
+    result = []
+    for left_row in left_rows:
+        for right_row in right_rows:
+            # Merge the two rows
+            joined_row = {**left_row, **right_row}
+            result.append(joined_row)
+    
+    return result
 
 
 def inner_join_test():
@@ -371,10 +496,44 @@ def inner_join_test():
 m, k, n = 3, 4, 5  # (m x k) and (k x n) matrices
 
 
-def matmul_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]: ...
+def matmul_mapper(key: Any, value: Any) -> list[tuple[Any, Any]]:
+    """
+    Maps each k-th column-row pair to partial products for matrix multiplication.
+    
+    For C = A × B, where A is (m x k) and B is (k x n):
+    C[i,j] = sum over k of A[i,k] * B[k,j]
+    
+    Args:
+        key: Index k (column of A, row of B)
+        value: Tuple of (k-th column of A, k-th row of B)
+    
+    Returns:
+        List of ((i, j), A[i,k] * B[k,j]) tuples for all positions in result matrix
+    """
+    col_a, row_b = value  # k-th column of A (size m), k-th row of B (size n)
+    
+    result = []
+    for i in range(len(col_a)):  # Iterate over rows of A (m rows)
+        for j in range(len(row_b)):  # Iterate over columns of B (n columns)
+            # Compute partial product for position (i, j)
+            partial_product = col_a[i] * row_b[j]
+            result.append(((i, j), partial_product))
+    
+    return result
 
 
-def matmul_reducer(key: Any, values: list[Any]) -> list[Any]: ...
+def matmul_reducer(key: Any, values: list[Any]) -> list[Any]:
+    """
+    Reduces partial products for each position to compute final matrix element.
+    
+    Args:
+        key: Position (i, j) in result matrix
+        values: List of partial products A[i,k] * B[k,j] for all k
+    
+    Returns:
+        List containing the final value C[i,j]
+    """
+    return [sum(values)]
 
 
 def matmul_test():
